@@ -80,7 +80,8 @@ pulls.
 
 Release archives cover Linux, macOS, Windows, the BSDs, illumos, Solaris,
 AIX, and every applicable architecture supported by Go. The container image
-covers every Linux architecture supported by Go and OCI.
+covers eight Linux platforms: 386, amd64, ARMv6, ARMv7, ARM64, PPC64LE,
+RISC-V 64, and s390x.
 
 ## Controls
 
@@ -127,8 +128,9 @@ TEMO_PNG_DIR=/tmp/temo go test -run DumpPNG      # dump every scene to PNG for e
 TEMO_PNG_COLOR=cyan TEMO_PNG_DIR=/tmp/t go test -run DumpPNG
 ```
 
-Releases are automated. Push a semantic-version tag to publish the GitHub
-release archives and the matching `ghcr.io/jpillora/temo` image tags:
+Releases are automated with GoReleaser and ko—no Docker daemon is involved.
+Push a semantic-version tag to publish the GitHub release archives and the
+matching `ghcr.io/jpillora/temo` image tags:
 
 ```sh
 git tag v0.1.0

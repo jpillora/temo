@@ -60,6 +60,43 @@ builds:
       - windows_amd64
       - windows_arm64
 
+# ko publishes a multi-platform image without a Docker daemon. It imports this
+# build's flags and environment, so its compile normally reuses Go's cache
+# after the archive builds complete.
+kos:
+  - id: temo
+    build: temo
+    main: .
+    repositories:
+      - ghcr.io/jpillora/temo
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .Prerelease }}{{ .Major }}.{{ .Minor }}{{ end }}"
+      - "{{ if not .Prerelease }}{{ .Major }}{{ end }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    bare: true
+    base_image: alpine:3.22
+    user: "65532:65532"
+    platforms:
+      - linux/386
+      - linux/amd64
+      - linux/arm/v6
+      - linux/arm/v7
+      - linux/arm64
+      - linux/ppc64le
+      - linux/riscv64
+      - linux/s390x
+    labels:
+      org.opencontainers.image.title: temo
+      org.opencontainers.image.description: A terminal demoscene in pure Go
+      org.opencontainers.image.source: https://github.com/jpillora/temo
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+    annotations:
+      org.opencontainers.image.source: https://github.com/jpillora/temo
+    creation_time: "{{ .CommitTimestamp }}"
+    sbom: spdx
+
 archives:
   - id: binaries
     ids:
