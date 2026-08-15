@@ -74,9 +74,7 @@ Or run the multi-platform container image in an interactive terminal:
 docker run --rm -it ghcr.io/jpillora/temo:latest
 ```
 
-GitHub creates the first GHCR package as private. After the first tagged
-release, change the `temo` package visibility to public once to allow anonymous
-pulls.
+The GHCR package is public, so anonymous pulls work without a registry login.
 
 Release archives cover Linux, macOS, Windows, the BSDs, illumos, Solaris,
 AIX, and every applicable architecture supported by Go. The container image
