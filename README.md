@@ -9,6 +9,14 @@ the chrome.
 Seven classic effects rendered as half-block "pixels" (double vertical
 resolution), all themed live from **one configurable primary color**.
 
+[![CI](https://github.com/jpillora/temo/actions/workflows/ci.yml/badge.svg)](https://github.com/jpillora/temo/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/jpillora/temo)](https://github.com/jpillora/temo/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/jpillora/temo/total)](https://github.com/jpillora/temo/releases)
+
+<p align="center">
+  <img src="docs/temo.gif" alt="Eight colorful animated TEMO tiles showing every scene and a custom palette variation">
+</p>
+
 ```
 go run . -primary '#00D8FF'
 ```
@@ -44,6 +52,36 @@ temo cyan                     # positional works too
 Named colors: red, orange, amber, yellow, lime, green, teal, cyan, blue,
 indigo, violet, purple, magenta, pink, rose, white.
 
+## Install
+
+Download a prebuilt archive for your platform from the
+[latest release](https://github.com/jpillora/temo/releases/latest), or use the
+installer:
+
+```sh
+curl https://i.jpillora.com/temo! | bash
+```
+
+With Go installed, build and install the latest release from source:
+
+```sh
+go install github.com/jpillora/temo@latest
+```
+
+Or run the multi-platform container image in an interactive terminal:
+
+```sh
+docker run --rm -it ghcr.io/jpillora/temo:latest
+```
+
+GitHub creates the first GHCR package as private. After the first tagged
+release, change the `temo` package visibility to public once to allow anonymous
+pulls.
+
+Release archives cover Linux, macOS, Windows, the BSDs, illumos, Solaris,
+AIX, and every applicable architecture supported by Go. The container image
+covers every Linux architecture supported by Go and OCI.
+
 ## Controls
 
 | key         | action            |
@@ -68,6 +106,7 @@ indigo, violet, purple, magenta, pink, rose, white.
 | `-scene`    | `1`       | starting scene                            |
 | `-scroller` | `true`    | greetings scroller                        |
 | `-selftest` | `false`   | headless render + stats, for development  |
+| `-version`  | `false`   | print the build version and exit           |
 
 ## How it works
 
@@ -86,4 +125,12 @@ ghostty, iTerm2, Windows Terminal, recent gnome/konsole).
 go test ./...                                    # scene sanity + geometry + color parsing
 TEMO_PNG_DIR=/tmp/temo go test -run DumpPNG      # dump every scene to PNG for eyeballing
 TEMO_PNG_COLOR=cyan TEMO_PNG_DIR=/tmp/t go test -run DumpPNG
+```
+
+Releases are automated. Push a semantic-version tag to publish the GitHub
+release archives and the matching `ghcr.io/jpillora/temo` image tags:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
 ```

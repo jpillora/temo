@@ -1,4 +1,4 @@
-module temo
+module github.com/jpillora/temo
 
 go 1.26.4
 

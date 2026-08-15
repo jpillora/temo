@@ -1,0 +1,92 @@
+version: 2
+
+project_name: temo
+
+builds:
+  - id: temo
+    main: .
+    binary: temo
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    # Every practical native command-line target in `go tool dist list`.
+    # Mobile and WebAssembly targets do not produce standalone terminal apps.
+    targets:
+      - aix_ppc64
+      - darwin_amd64
+      - darwin_arm64
+      - dragonfly_amd64
+      - freebsd_386
+      - freebsd_amd64
+      - freebsd_arm_5
+      - freebsd_arm_6
+      - freebsd_arm_7
+      - freebsd_arm64
+      - illumos_amd64
+      - linux_386
+      - linux_amd64
+      - linux_arm_5
+      - linux_arm_6
+      - linux_arm_7
+      - linux_arm64
+      - linux_loong64
+      - linux_mips
+      - linux_mipsle
+      - linux_mips64
+      - linux_mips64le
+      - linux_ppc64
+      - linux_ppc64le
+      - linux_riscv64
+      - linux_s390x
+      - netbsd_386
+      - netbsd_amd64
+      - netbsd_arm_5
+      - netbsd_arm_6
+      - netbsd_arm_7
+      - netbsd_arm64
+      - openbsd_386
+      - openbsd_amd64
+      - openbsd_arm_5
+      - openbsd_arm_6
+      - openbsd_arm_7
+      - openbsd_arm64
+      - openbsd_ppc64
+      - openbsd_riscv64
+      - solaris_amd64
+      - windows_386
+      - windows_amd64
+      - windows_arm64
+
+archives:
+  - id: binaries
+    ids:
+      - temo
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+release:
+  prerelease: auto
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs(?:\([^)]+\))?:'
+      - '^test(?:\([^)]+\))?:'
+      - '^chore(?:\([^)]+\))?:'
+      - '^ci(?:\([^)]+\))?:'

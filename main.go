@@ -19,6 +19,9 @@ import (
 
 type tickMsg time.Time
 
+// version is replaced with the release tag by GoReleaser and Docker builds.
+var version = "dev"
+
 func tick(fps int) tea.Cmd {
 	return tea.Tick(time.Second/time.Duration(fps), func(t time.Time) tea.Msg { return tickMsg(t) })
 }
@@ -329,13 +332,14 @@ func runSelftest(m *model) {
 
 func main() {
 	var (
-		primary  string
-		fpsCap   int
-		bpm      float64
-		dwell    float64
-		start    int
-		scroller bool
-		selftest bool
+		primary     string
+		fpsCap      int
+		bpm         float64
+		dwell       float64
+		start       int
+		scroller    bool
+		selftest    bool
+		showVersion bool
 	)
 	flag.StringVar(&primary, "primary", "#FF5FD2", "primary color: hex like '#FF5FD2' or a name ("+colorNames()+")")
 	flag.StringVar(&primary, "p", "#FF5FD2", "shorthand for -primary")
@@ -345,7 +349,12 @@ func main() {
 	flag.IntVar(&start, "scene", 1, "scene to start on (1-7)")
 	flag.BoolVar(&scroller, "scroller", true, "show the greetings scroller")
 	flag.BoolVar(&selftest, "selftest", false, "render each scene headless, print stats and one frame")
+	flag.BoolVar(&showVersion, "version", false, "print version and exit")
 	flag.Parse()
+	if showVersion {
+		fmt.Println(version)
+		return
+	}
 
 	if flag.NArg() > 0 {
 		primary = flag.Arg(0)
