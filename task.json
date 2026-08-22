@@ -1,1 +1,1 @@
-{"id":4,"title":"Add search to the tasks panel","status":"open","priority":"P2","type":"feature","depends_on":[5],"tags":["web-ui"],"description":"Substring match over title and description","meta":{"created":"2026-08-22T03:36:37Z","updated":"2026-08-22T03:43:26Z"}}
+{"id":4,"title":"Add search to the tasks panel","status":"open","priority":"P2","type":"feature","depends_on":[5],"tags":["web-ui"],"description":"Substring match over title and description","meta":{"created":"2026-08-22T03:36:37Z","updated":"2026-08-22T03:43:32Z"}}
