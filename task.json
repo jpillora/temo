@@ -1,1 +1,1 @@
-{"id":3,"title":"Fix the login flow","status":"open","priority":"P1","type":"bug","tags":["api"],"description":"Session cookie expires while document.hidden is true","meta":{"created":"2026-08-22T03:36:31Z"}}
+{"id":3,"title":"Fix the login flow","status":"open","priority":"P1","type":"bug","depends_on":[2],"tags":["api"],"description":"Session cookie expires while document.hidden is true","meta":{"created":"2026-08-22T03:36:31Z","updated":"2026-08-22T03:36:41Z"}}
