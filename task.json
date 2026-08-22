@@ -1,1 +1,1 @@
-{"id":6,"title":"Ship the release","status":"open","priority":"P3","type":"task","depends_on":[4,3],"meta":{"created":"2026-08-22T03:36:37Z","updated":"2026-08-22T05:12:05Z"}}
+{"id":6,"title":"Ship the release","status":"open","priority":"P3","type":"task","depends_on":[4],"meta":{"created":"2026-08-22T03:36:37Z","updated":"2026-08-22T05:12:05Z"}}
