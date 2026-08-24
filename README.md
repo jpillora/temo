@@ -83,16 +83,18 @@ RISC-V 64, and s390x.
 
 ## Controls
 
-| key         | action            |
-| ----------- | ----------------- |
-| `SPACE` `→` | next scene        |
-| `←`         | previous scene    |
-| `1`–`7`     | jump to scene     |
-| `P`         | pause             |
-| `C`         | CRT scanlines     |
-| `S`         | scroller          |
-| `H` `?`     | help              |
-| `Q` `ESC`   | quit              |
+| key               | action                   |
+| ----------------- | ------------------------ |
+| `SPACE` `→`       | next scene               |
+| `←`               | previous scene           |
+| `1`–`7`           | jump to scene            |
+| left click / drag | paint current FX         |
+| right click       | toggle ripple / lazers   |
+| `P`               | pause                    |
+| `C`               | CRT scanlines            |
+| `S`               | scroller                 |
+| `H` `?`           | help                     |
+| `Q` `ESC`         | quit                     |
 
 ## Flags
 

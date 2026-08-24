@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -22,6 +23,7 @@ func init() {
 // the scene-wipe blend, beat-pulse brightness, vignette and CRT scanlines.
 func (m *model) composeFrame() {
 	lut := &m.pal.lutF
+	hot := lut[255]
 	bright := 1 + 0.12*math.Max(0, m.pulsePos)
 	fadeIn := clamp01(m.t / 1.1)
 	bright *= fadeIn * fadeIn
@@ -54,10 +56,100 @@ func (m *model) composeFrame() {
 			} else {
 				c = lut[m.bufCur[i]]
 			}
-			m.frame[i] = RGB8{u8(c.R * f), u8(c.G * f), u8(c.B * f)}
+			r, g, b := c.R*f, c.G*f, c.B*f
+			if glow := m.impactGlow(x, y) + m.laserGlow(x, y); glow > 0 {
+				a := clamp01(glow)
+				r = lerp(r, hot.R, a)
+				g = lerp(g, hot.G, a)
+				b = lerp(b, hot.B, a)
+			}
+			m.frame[i] = RGB8{u8(r), u8(g), u8(b)}
 			i++
 		}
 	}
+}
+
+// impactGlow returns the brightness of the expanding ring and its softer
+// echo at one pixel. Scaling the radius to the canvas diagonal keeps the
+// shockwave timing consistent from a small terminal to a full-screen one.
+func (m *model) impactGlow(x, y int) float64 {
+	if len(m.impacts) == 0 {
+		return 0
+	}
+	maxRadius := math.Hypot(float64(m.pw), float64(m.ph))
+	var glow float64
+	for _, in := range m.impacts {
+		life := 1 - in.age/impactDuration
+		if life <= 0 {
+			continue
+		}
+		d := math.Hypot(float64(x)-in.x, float64(y)-in.y)
+		radius := (1 - life) * maxRadius * in.reach
+		width := 1.15 + radius*0.018
+		crest := 0.0
+		if delta := d - radius; math.Abs(delta) < width*4 {
+			z := delta / width
+			crest = math.Exp(-0.5 * z * z)
+		}
+
+		// A dimmer inner echo gives the wave some depth once it has opened up.
+		echo := 0.0
+		if radius > 5 {
+			echoWidth := width*0.8 + 0.35
+			if delta := d - radius*0.58; math.Abs(delta) < echoWidth*4 {
+				ez := delta / echoWidth
+				echo = 0.32 * math.Exp(-0.5*ez*ez)
+			}
+		}
+		// The launch flash disappears quickly, leaving the travelling rings.
+		core := 0.0
+		if in.age < 0.65 && d < 36 {
+			core = 0.9 * math.Exp(-d*0.16) * math.Exp(-in.age*8)
+		}
+		glow += in.strength * (life*(0.88*crest+echo) + core)
+	}
+	return glow
+}
+
+// laserGlow measures a pixel's distance from each live beam segment. A tight
+// core, a softer bloom, and a hot point at the mouse give the line a brief
+// phosphor-burn shape without adding another color path to the compositor.
+func (m *model) laserGlow(x, y int) float64 {
+	if len(m.lasers) == 0 {
+		return 0
+	}
+	px, py := float64(x), float64(y)
+	var glow float64
+	for _, beam := range m.lasers {
+		life := 1 - beam.age/laserDuration
+		if life <= 0 {
+			continue
+		}
+		dx, dy := beam.x1-beam.x0, beam.y1-beam.y0
+		length2 := dx*dx + dy*dy
+		if length2 == 0 {
+			continue
+		}
+		t := ((px-beam.x0)*dx + (py-beam.y0)*dy) / length2
+		t = clamp01(t)
+		qx, qy := beam.x0+t*dx, beam.y0+t*dy
+		ex, ey := px-qx, py-qy
+		distance2 := ex*ex + ey*ey
+		beamGlow := 0.0
+		if distance2 < 16 {
+			beamGlow = 0.72*math.Exp(-distance2/1.35) + 0.18*math.Exp(-distance2/7.5)
+		}
+		tx, ty := px-beam.x1, py-beam.y1
+		target2 := tx*tx + ty*ty
+		targetGlow := 0.0
+		if target2 < 144 {
+			targetGlow = 0.5 * math.Exp(-target2/18)
+		}
+		// A tiny deterministic flicker keeps overlapping beams electrically alive.
+		flicker := 0.82 + 0.18*math.Sin(beam.age*180+beam.x0*0.17+beam.y0*0.11)
+		glow += life * flicker * (beamGlow + targetGlow)
+	}
+	return glow
 }
 
 func dim8(c RGB8) RGB8 {
@@ -218,6 +310,18 @@ func (m *model) drawToast() {
 	m.ovText(x, y, s, col)
 }
 
+func (m *model) drawModeToast() {
+	if m.modeToast <= 0 || m.showHelp {
+		return
+	}
+	s := fmt.Sprintf("FX %d · %s", m.effectMode.Number(), m.effectMode)
+	n := len([]rune(s))
+	x, y := (m.w-n)/2, 1
+	m.ovDimRect(x-2, y-1, x+n+1, y+1)
+	col := uint8(165 + 90*m.modeToast/modeToastDuration)
+	m.ovText(x, y, s, col)
+}
+
 // ── help panel ───────────────────────────────────────────────────────────
 
 func padRunes(s string, n int) string {
@@ -243,13 +347,15 @@ func (m *model) drawHelp() {
 		{"SPACE / →", "next scene"},
 		{"←", "previous scene"},
 		{"1-7", "jump to scene"},
+		{"LEFT DRAG", "paint effect"},
+		{"RIGHT CLICK", "toggle fx"},
 		{"P", "pause"},
 		{"C", "crt scanlines"},
 		{"S", "scroller"},
 		{"H / ?", "toggle help"},
 		{"Q / ESC", "quit"},
 	}
-	const kw, vw = 9, 14
+	const kw, vw = 12, 14
 	inner := kw + 1 + vw
 	lines := []string{"╭" + centerDashes(" CONTROLS ", inner+2) + "╮"}
 	for _, it := range items {

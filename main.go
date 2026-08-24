@@ -19,6 +19,50 @@ import (
 
 type tickMsg time.Time
 
+const (
+	impactDuration     = 1.35
+	dragImpactSpacing  = 6.0
+	dragImpactReach    = 0.32
+	dragImpactStrength = 0.32
+	maxImpacts         = 12
+	laserDuration      = 0.34
+	maxLasers          = 16
+	modeToastDuration  = 1.1
+)
+
+type effectMode uint8
+
+const (
+	effectRipple effectMode = iota
+	effectLazers
+)
+
+func (e effectMode) String() string {
+	if e == effectLazers {
+		return "LAZERS"
+	}
+	return "RIPPLE"
+}
+
+func (e effectMode) Number() int { return int(e) + 1 }
+
+// impact is a short-lived, palette-aware shockwave centered on a pointer gesture.
+// Coordinates are in the double-height pixel grid, not terminal cells.
+type impact struct {
+	x, y     float64
+	age      float64
+	reach    float64
+	strength float64
+}
+
+// laser is a beam from a random canvas edge to the pointer, in pixel-grid
+// coordinates. It fades quickly so a drag reads as a volley rather than a web.
+type laser struct {
+	x0, y0 float64
+	x1, y1 float64
+	age    float64
+}
+
 // version is replaced with the release tag by GoReleaser and Docker builds.
 var version = "dev"
 
@@ -50,6 +94,13 @@ type model struct {
 	pulsePos, pulseVel float64
 	plSpring           harmonica.Spring
 	lastBeat           int
+	impacts            []impact
+	lasers             []laser
+	effectMode         effectMode
+	effectRNG          rng32
+	modeToast          float64
+	dragging           bool
+	dragX, dragY       float64
 
 	sceneClock float64
 
@@ -80,6 +131,7 @@ func newModel(pal *Palette, fpsCap int, bpm, dwell float64, start int, scroller 
 		crt:        true,
 		scrollerOn: scroller,
 		fpsEMA:     float64(fpsCap),
+		effectRNG:  0x1A2B3C4D,
 	}
 	m.scenes = []Scene{&plasma{}, &tunnel{}, &metaballs{}, &knot{}, &rotozoom{}, &starfield{}, &fire{}}
 	if start >= 1 && start <= len(m.scenes) {
@@ -123,6 +175,9 @@ func (m *model) resize(w, h int) {
 	m.ovRune = make([]rune, w*rows)
 	m.ovCol = make([]uint8, w*rows)
 	m.ovDim = make([]bool, w*rows)
+	m.impacts = nil
+	m.lasers = nil
+	m.dragging = false
 	cx, cy := float64(m.pw)/2, float64(m.ph)/2
 	i := 0
 	for y := 0; y < m.ph; y++ {
@@ -168,6 +223,144 @@ func (m *model) switchScene(to int) {
 	m.sceneClock = 0
 }
 
+func (m *model) pointerPixel(x, cellY int) (px, py float64, ok bool) {
+	px, py = float64(x), float64(cellY*2)+0.5
+	ok = x >= 0 && x < m.pw && cellY >= 0 && cellY < m.h-1
+	return
+}
+
+func (m *model) emitImpact(x, y float64, kick bool) {
+	if x < 0 || x >= float64(m.pw) || y < 0 || y >= float64(m.ph) {
+		return
+	}
+	if len(m.impacts) >= maxImpacts {
+		copy(m.impacts, m.impacts[1:])
+		m.impacts = m.impacts[:maxImpacts-1]
+	}
+	reach, strength := 1.0, 1.0
+	if !kick {
+		reach, strength = dragImpactReach, dragImpactStrength
+	}
+	m.impacts = append(m.impacts, impact{x: x, y: y, reach: reach, strength: strength})
+	if kick {
+		// Give the initial drop a whole-screen kick as the local ring launches.
+		m.pulsePos, m.pulseVel = 1, 0
+	}
+}
+
+func (m *model) emitLaser(x, y float64, burst bool) {
+	if x < 0 || x >= float64(m.pw) || y < 0 || y >= float64(m.ph) {
+		return
+	}
+	count := 1
+	if burst {
+		count = 3
+		m.pulsePos, m.pulseVel = 1, 0
+	}
+	for i := 0; i < count; i++ {
+		var x0, y0 float64
+		switch m.effectRNG.next() % 4 {
+		case 0:
+			x0, y0 = m.effectRNG.f()*float64(m.pw-1), 0
+		case 1:
+			x0, y0 = float64(m.pw-1), m.effectRNG.f()*float64(m.ph-1)
+		case 2:
+			x0, y0 = m.effectRNG.f()*float64(m.pw-1), float64(m.ph-1)
+		default:
+			x0, y0 = 0, m.effectRNG.f()*float64(m.ph-1)
+		}
+		if len(m.lasers) >= maxLasers {
+			copy(m.lasers, m.lasers[1:])
+			m.lasers = m.lasers[:maxLasers-1]
+		}
+		m.lasers = append(m.lasers, laser{x0: x0, y0: y0, x1: x, y1: y})
+	}
+}
+
+func (m *model) emitPointerEffect(x, y float64, initial bool) {
+	if m.effectMode == effectLazers {
+		m.emitLaser(x, y, initial)
+		return
+	}
+	m.emitImpact(x, y, initial)
+}
+
+func (m *model) addImpact(x, cellY int) {
+	px, py, ok := m.pointerPixel(x, cellY)
+	if ok {
+		m.emitImpact(px, py, true)
+	}
+}
+
+func (m *model) beginDrag(x, cellY int) {
+	px, py, ok := m.pointerPixel(x, cellY)
+	m.dragging = ok
+	if !ok {
+		return
+	}
+	m.dragX, m.dragY = px, py
+	m.emitPointerEffect(px, py, true)
+}
+
+func (m *model) dragImpact(x, cellY int) {
+	if !m.dragging {
+		return
+	}
+	px, py, ok := m.pointerPixel(x, cellY)
+	if !ok {
+		// Track the pointer outside the canvas without painting the status bar.
+		m.dragX, m.dragY = px, py
+		return
+	}
+	dx, dy := px-m.dragX, py-m.dragY
+	distance := math.Hypot(dx, dy)
+	steps := int(distance / dragImpactSpacing)
+	if steps == 0 {
+		return
+	}
+	for i := 1; i <= steps; i++ {
+		f := dragImpactSpacing * float64(i) / distance
+		m.emitPointerEffect(m.dragX+dx*f, m.dragY+dy*f, false)
+	}
+	// Retain any sub-spacing remainder for the next motion event. This keeps
+	// ripple density even when terminals report movement at different rates.
+	f := dragImpactSpacing * float64(steps) / distance
+	m.dragX += dx * f
+	m.dragY += dy * f
+}
+
+func (m *model) stepImpacts(dt float64) {
+	active := m.impacts[:0]
+	for _, in := range m.impacts {
+		in.age += dt
+		if in.age < impactDuration {
+			active = append(active, in)
+		}
+	}
+	m.impacts = active
+}
+
+func (m *model) stepLasers(dt float64) {
+	active := m.lasers[:0]
+	for _, beam := range m.lasers {
+		beam.age += dt
+		if beam.age < laserDuration {
+			active = append(active, beam)
+		}
+	}
+	m.lasers = active
+}
+
+func (m *model) toggleEffectMode() {
+	if m.effectMode == effectRipple {
+		m.effectMode = effectLazers
+	} else {
+		m.effectMode = effectRipple
+	}
+	m.dragging = false
+	m.modeToast = modeToastDuration
+}
+
 func (m *model) Init() tea.Cmd { return tick(m.fpsCap) }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -200,6 +393,24 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case tea.MouseMsg:
+		switch msg.Action {
+		case tea.MouseActionPress:
+			m.dragging = false
+			switch msg.Button {
+			case tea.MouseButtonLeft:
+				m.beginDrag(msg.X, msg.Y)
+			case tea.MouseButtonRight:
+				m.toggleEffectMode()
+			}
+		case tea.MouseActionMotion:
+			if msg.Button == tea.MouseButtonLeft {
+				m.dragImpact(msg.X, msg.Y)
+			}
+		case tea.MouseActionRelease:
+			m.dragging = false
+		}
+
 	case tickMsg:
 		now := time.Time(msg)
 		dt := 1.0 / float64(m.fpsCap)
@@ -210,6 +421,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.last, m.haveLast = now, true
 		m.fpsEMA = m.fpsEMA*0.92 + (1/dt)*0.08
+		m.stepImpacts(dt)
+		m.stepLasers(dt)
+		if m.modeToast > 0 {
+			m.modeToast = math.Max(0, m.modeToast-dt)
+		}
 
 		if !m.paused {
 			m.t += dt
@@ -252,6 +468,7 @@ func (m *model) View() string {
 	}
 	m.ovClear()
 	m.drawToast()
+	m.drawModeToast()
 	m.drawScroller()
 	m.drawHelp()
 	m.composeFrame()
@@ -260,14 +477,14 @@ func (m *model) View() string {
 
 func (m *model) statusBar() string {
 	badge := m.styBadge.Render(" ◆ TEMO ")
-	state := fmt.Sprintf("%d/%d %s", m.cur+1, len(m.scenes), m.scenes[m.cur].Name())
+	state := fmt.Sprintf("%d/%d %s · %s", m.cur+1, len(m.scenes), m.scenes[m.cur].Name(), m.effectMode)
 	if m.paused {
 		state += "  ·  PAUSED"
 	} else {
 		state += fmt.Sprintf("  ·  %3.0f FPS", m.fpsEMA)
 	}
 	info := m.styBar.Render("  " + state + "  ·  " + m.pal.Primary.Hex() + "  ")
-	keys := m.styDim.Render("SPACE next · H help · Q quit ")
+	keys := m.styDim.Render("LMB paint · RMB mode · SPACE next · H help · Q quit ")
 	gap := m.w - lipgloss.Width(badge) - lipgloss.Width(info) - lipgloss.Width(keys)
 	if gap < 0 {
 		keys = ""
@@ -380,7 +597,7 @@ func main() {
 		return
 	}
 
-	if _, err := tea.NewProgram(m, tea.WithAltScreen()).Run(); err != nil {
+	if _, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "temo:", err)
 		os.Exit(1)
 	}

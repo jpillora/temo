@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func testModel() *model {
@@ -89,6 +91,132 @@ func TestViewGeometry(t *testing.T) {
 	_ = m.View()
 	m.resize(44, 12)
 	_ = m.View()
+}
+
+func TestMouseImpact(t *testing.T) {
+	m := testModel()
+	m.scenes[m.cur].Render(m.t, m.bufCur)
+	m.composeFrame()
+	before := append([]RGB8(nil), m.frame...)
+
+	_, _ = m.Update(tea.MouseMsg{
+		X:      17,
+		Y:      8,
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+	})
+	if len(m.impacts) != 1 {
+		t.Fatalf("left click created %d impacts, want 1", len(m.impacts))
+	}
+	if got := m.impacts[0]; got.x != 17 || got.y != 16.5 {
+		t.Fatalf("impact coordinates = (%.1f, %.1f), want (17, 16.5)", got.x, got.y)
+	}
+	if !m.dragging {
+		t.Fatal("left press did not begin a drag")
+	}
+
+	// Isolate the local post-processing effect from the global pulse kick.
+	m.pulsePos = 0
+	m.composeFrame()
+	changed := 0
+	for i := range m.frame {
+		if m.frame[i] != before[i] {
+			changed++
+		}
+	}
+	if changed == 0 {
+		t.Fatal("click impact did not change the composed frame")
+	}
+
+	// Tiny movements are accumulated; a fast event is interpolated into an
+	// evenly spaced trail rather than leaving a gap.
+	_, _ = m.Update(tea.MouseMsg{X: 20, Y: 8, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft})
+	if len(m.impacts) != 1 {
+		t.Fatalf("sub-spacing drag created %d impacts, want 1", len(m.impacts))
+	}
+	_, _ = m.Update(tea.MouseMsg{X: 36, Y: 8, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft})
+	if len(m.impacts) != 4 {
+		t.Fatalf("interpolated drag created %d impacts, want 4", len(m.impacts))
+	}
+
+	// Release ends the wake; the middle button and status bar do nothing.
+	_, _ = m.Update(tea.MouseMsg{X: 36, Y: 8, Action: tea.MouseActionRelease, Button: tea.MouseButtonNone})
+	if m.dragging {
+		t.Fatal("mouse release did not end the drag")
+	}
+	count := len(m.impacts)
+	ignored := []tea.MouseMsg{
+		{X: 60, Y: 8, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft},
+		{X: 17, Y: 8, Action: tea.MouseActionPress, Button: tea.MouseButtonMiddle},
+		{X: 17, Y: m.h - 1, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft},
+	}
+	for _, msg := range ignored {
+		_, _ = m.Update(msg)
+	}
+	if len(m.impacts) != count {
+		t.Fatalf("ignored mouse events changed impact count to %d", len(m.impacts))
+	}
+
+	for i := 0; i < maxImpacts+2; i++ {
+		m.addImpact(i, 1)
+	}
+	if len(m.impacts) != maxImpacts {
+		t.Fatalf("impact count = %d after click burst, want cap of %d", len(m.impacts), maxImpacts)
+	}
+
+	m.stepImpacts(impactDuration)
+	if len(m.impacts) != 0 {
+		t.Fatalf("expired impact was retained: %+v", m.impacts)
+	}
+}
+
+func TestLaserMode(t *testing.T) {
+	m := testModel()
+	_, _ = m.Update(tea.MouseMsg{X: 40, Y: 10, Action: tea.MouseActionPress, Button: tea.MouseButtonRight})
+	if m.effectMode != effectLazers || m.modeToast != modeToastDuration {
+		t.Fatalf("right click selected mode %v with toast %.2f", m.effectMode, m.modeToast)
+	}
+
+	_, _ = m.Update(tea.MouseMsg{X: 40, Y: 10, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	if len(m.lasers) != 3 {
+		t.Fatalf("laser click created %d beams, want 3", len(m.lasers))
+	}
+	for i, beam := range m.lasers {
+		if beam.x1 != 40 || beam.y1 != 20.5 {
+			t.Errorf("beam %d target = (%.1f, %.1f), want (40, 20.5)", i, beam.x1, beam.y1)
+		}
+		onEdge := beam.x0 == 0 || beam.x0 == float64(m.pw-1) || beam.y0 == 0 || beam.y0 == float64(m.ph-1)
+		if !onEdge {
+			t.Errorf("beam %d source (%.1f, %.1f) is not on an edge", i, beam.x0, beam.y0)
+		}
+	}
+
+	m.scenes[m.cur].Render(m.t, m.bufCur)
+	m.composeFrame()
+	changed := false
+	for _, c := range m.frame {
+		if c == m.pal.lut8[255] {
+			changed = true
+			break
+		}
+	}
+	if !changed {
+		t.Fatal("laser beams did not produce a hot pixel in the composed frame")
+	}
+
+	_, _ = m.Update(tea.MouseMsg{X: 58, Y: 10, Action: tea.MouseActionMotion, Button: tea.MouseButtonLeft})
+	if len(m.lasers) != 6 {
+		t.Fatalf("laser drag created %d beams, want 6", len(m.lasers))
+	}
+	m.stepLasers(laserDuration)
+	if len(m.lasers) != 0 {
+		t.Fatalf("expired lasers were retained: %+v", m.lasers)
+	}
+
+	_, _ = m.Update(tea.MouseMsg{X: 40, Y: 10, Action: tea.MouseActionPress, Button: tea.MouseButtonRight})
+	if m.effectMode != effectRipple {
+		t.Fatalf("second right click selected %v, want RIPPLE", m.effectMode)
+	}
 }
 
 // TestDumpPNG writes one PNG per scene through the full compose pipeline
