@@ -261,6 +261,20 @@ func (m *model) ovDimRect(x0, y0, x1, y1 int) {
 
 // ── scroller ─────────────────────────────────────────────────────────────
 
+// drawKeyRow puts the newest press at the left edge, shifting the remaining
+// live entries to the right. With no live keys it leaves the top row untouched.
+func (m *model) drawKeyRow() {
+	if len(m.keyPresses) == 0 {
+		return
+	}
+	labels := make([]string, len(m.keyPresses))
+	for i, key := range m.keyPresses {
+		labels[i] = key.label
+	}
+	m.ovDimRect(0, 0, m.w-1, 0)
+	m.ovText(0, 0, strings.Join(labels, " "), 235)
+}
+
 var scrollText = []rune("✦ T E M O ✦ A TERMINAL DEMOSCENE IN PURE GO ✦ BUBBLE TEA × LIP GLOSS × HARMONICA ✦ GREETINGS TO ALL TERMINAL DWELLERS ✦ YOUR COLOR · YOUR DEMO :: temo -primary '#00D8FF' ✦ PRESS SPACE FOR THE NEXT EFFECT ✦ STAY AWHILE AND RENDER ✦ ")
 
 func (m *model) drawScroller() {

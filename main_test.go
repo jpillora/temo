@@ -6,6 +6,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -75,6 +76,9 @@ func TestParseColor(t *testing.T) {
 
 func TestViewGeometry(t *testing.T) {
 	m := testModel()
+	if bar := m.statusBar(); !strings.Contains(bar, "36×120") {
+		t.Fatalf("status bar does not show rows×cols: %q", bar)
+	}
 	frame := m.View()
 	lines := 1
 	for _, r := range frame {
@@ -91,6 +95,43 @@ func TestViewGeometry(t *testing.T) {
 	_ = m.View()
 	m.resize(44, 12)
 	_ = m.View()
+}
+
+func TestKeyRow(t *testing.T) {
+	m := testModel()
+	if len(m.keyPresses) != 0 {
+		t.Fatal("key row should start hidden")
+	}
+
+	keys := []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune{'a'}},
+		{Type: tea.KeyCtrlC},
+		{Type: tea.KeyShiftLeft, Alt: true},
+		{Type: tea.KeyRunes, Runes: []rune{'K'}, Alt: true},
+		{Type: tea.KeySpace},
+	}
+	for _, key := range keys {
+		m.addKeyPress(key)
+	}
+	want := []string{"space", "alt+shift+k", "alt+shift+left", "ctrl+c", "a"}
+	if len(m.keyPresses) != len(want) {
+		t.Fatalf("key row has %d entries, want %d", len(m.keyPresses), len(want))
+	}
+	for i, label := range want {
+		if m.keyPresses[i].label != label {
+			t.Errorf("key %d = %q, want %q", i, m.keyPresses[i].label, label)
+		}
+	}
+
+	m.keyPresses[0].age = 2
+	m.stepKeyPresses(1)
+	if len(m.keyPresses) != 4 || m.keyPresses[0].label != "alt+shift+k" {
+		t.Fatalf("individual key expiry left row %+v", m.keyPresses)
+	}
+	m.stepKeyPresses(keyPressDuration)
+	if len(m.keyPresses) != 0 {
+		t.Fatalf("expired key row was retained: %+v", m.keyPresses)
+	}
 }
 
 func TestMouseImpact(t *testing.T) {

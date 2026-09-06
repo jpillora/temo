@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/harmonica"
@@ -28,6 +29,7 @@ const (
 	laserDuration      = 0.34
 	maxLasers          = 16
 	modeToastDuration  = 1.1
+	keyPressDuration   = 3.0
 )
 
 type effectMode uint8
@@ -61,6 +63,13 @@ type laser struct {
 	x0, y0 float64
 	x1, y1 float64
 	age    float64
+}
+
+// keyPress is one entry in the transient key history drawn across the top.
+// Its lifetime advances even while the demo itself is paused.
+type keyPress struct {
+	label string
+	age   float64
 }
 
 // version is replaced with the release tag by GoReleaser and Docker builds.
@@ -99,6 +108,7 @@ type model struct {
 	effectMode         effectMode
 	effectRNG          rng32
 	modeToast          float64
+	keyPresses         []keyPress
 	dragging           bool
 	dragX, dragY       float64
 
@@ -351,6 +361,37 @@ func (m *model) stepLasers(dt float64) {
 	m.lasers = active
 }
 
+func (m *model) addKeyPress(msg tea.KeyMsg) {
+	label := msg.String()
+	if msg.Paste {
+		label = "paste"
+	} else if msg.Type == tea.KeySpace || label == " " {
+		label = "space"
+	} else if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && unicode.IsUpper(msg.Runes[0]) {
+		label = "shift+" + string(unicode.ToLower(msg.Runes[0]))
+		if msg.Alt {
+			label = "alt+" + label
+		}
+	}
+	if label == "" {
+		return
+	}
+	m.keyPresses = append(m.keyPresses, keyPress{})
+	copy(m.keyPresses[1:], m.keyPresses)
+	m.keyPresses[0] = keyPress{label: label}
+}
+
+func (m *model) stepKeyPresses(dt float64) {
+	active := m.keyPresses[:0]
+	for _, key := range m.keyPresses {
+		key.age += dt
+		if key.age < keyPressDuration {
+			active = append(active, key)
+		}
+	}
+	m.keyPresses = active
+}
+
 func (m *model) toggleEffectMode() {
 	if m.effectMode == effectRipple {
 		m.effectMode = effectLazers
@@ -369,6 +410,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resize(msg.Width, msg.Height)
 
 	case tea.KeyMsg:
+		m.addKeyPress(msg)
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
 			return m, tea.Quit
@@ -423,6 +465,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fpsEMA = m.fpsEMA*0.92 + (1/dt)*0.08
 		m.stepImpacts(dt)
 		m.stepLasers(dt)
+		m.stepKeyPresses(dt)
 		if m.modeToast > 0 {
 			m.modeToast = math.Max(0, m.modeToast-dt)
 		}
@@ -471,13 +514,14 @@ func (m *model) View() string {
 	m.drawModeToast()
 	m.drawScroller()
 	m.drawHelp()
+	m.drawKeyRow()
 	m.composeFrame()
 	return m.renderCanvas() + m.statusBar()
 }
 
 func (m *model) statusBar() string {
 	badge := m.styBadge.Render(" ◆ TEMO ")
-	state := fmt.Sprintf("%d/%d %s · %s", m.cur+1, len(m.scenes), m.scenes[m.cur].Name(), m.effectMode)
+	state := fmt.Sprintf("%d/%d %s · %s · %d×%d", m.cur+1, len(m.scenes), m.scenes[m.cur].Name(), m.effectMode, m.h, m.w)
 	if m.paused {
 		state += "  ·  PAUSED"
 	} else {
