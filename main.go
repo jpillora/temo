@@ -7,6 +7,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"image"
 	"math"
 	"os"
 	"strings"
@@ -112,7 +113,10 @@ type model struct {
 	dragging           bool
 	dragX, dragY       float64
 
-	sceneClock float64
+	sceneClock  float64
+	pastedImage image.Image
+	pasteFrame  []RGB8
+	pasteUntil  time.Time
 
 	pal *Palette
 
@@ -175,6 +179,7 @@ func (m *model) resize(w, h int) {
 		return
 	}
 	m.w, m.h = w, h
+	m.pasteFrame = nil
 	rows := h - 1
 	m.pw, m.ph = w, rows*2
 	n := m.pw * m.ph
@@ -406,11 +411,19 @@ func (m *model) Init() tea.Cmd { return tick(m.fpsCap) }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case pastedImageMsg:
+		m.pastedImage = msg.image
+		m.pasteFrame = nil
+		m.pasteUntil = time.Now().Add(3 * time.Second)
+		m.dragging = false
 	case tea.WindowSizeMsg:
 		m.resize(msg.Width, msg.Height)
 
 	case tea.KeyMsg:
 		m.addKeyPress(msg)
+		if msg.Paste {
+			return m, nil
+		}
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
 			return m, tea.Quit
@@ -462,6 +475,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.last, m.haveLast = now, true
+		if m.pastedImage != nil {
+			if now.Before(m.pasteUntil) {
+				return m, tick(m.fpsCap)
+			}
+			m.pastedImage = nil
+			m.pasteFrame = nil
+		}
 		m.fpsEMA = m.fpsEMA*0.92 + (1/dt)*0.08
 		m.stepImpacts(dt)
 		m.stepLasers(dt)
@@ -501,6 +521,11 @@ func (m *model) View() string {
 	if m.pw == 0 {
 		return ""
 	}
+	if m.pastedImage != nil {
+		m.ovClear()
+		m.renderPastedImage()
+		return m.renderCanvas() + m.statusBar()
+	}
 	if m.w < 40 || m.h < 10 {
 		return lipgloss.Place(m.w, m.h, lipgloss.Center, lipgloss.Center,
 			m.styBadge.Render(" TEMO ")+" needs a bigger terminal")
@@ -522,6 +547,9 @@ func (m *model) View() string {
 func (m *model) statusBar() string {
 	badge := m.styBadge.Render(" ◆ TEMO ")
 	state := fmt.Sprintf("%d/%d %s · %s · %d×%d", m.cur+1, len(m.scenes), m.scenes[m.cur].Name(), m.effectMode, m.h, m.w)
+	if m.pastedImage != nil {
+		state = "IMAGE PASTE · preview 3s"
+	}
 	if m.paused {
 		state += "  ·  PAUSED"
 	} else {
@@ -641,7 +669,11 @@ func main() {
 		return
 	}
 
-	if _, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run(); err != nil {
+	input := &imagePasteReader{File: os.Stdin}
+	p := tea.NewProgram(m, tea.WithInput(input), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	input.send = p.Send
+	defer input.stop()
+	if _, err := p.Run(); err != nil {
 		fmt.Fprintln(os.Stderr, "temo:", err)
 		os.Exit(1)
 	}

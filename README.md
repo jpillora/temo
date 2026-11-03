@@ -96,6 +96,13 @@ RISC-V 64, and s390x.
 | `H` `?`           | help                     |
 | `Q` `ESC`         | quit                     |
 
+Paste an image using OSC 52 (base64 image bytes or an image data URL) or
+OSC 1337 `File=…:<base64>` input. TEMO displays PNG, JPEG, and GIF images as
+truecolor half-block pixels for three seconds, then resumes the scene. Images
+are smoothly scaled to fit, with their aspect ratio and original colors
+preserved; transparency appears on black. This requires a terminal/client
+that sends image data on paste; ordinary text or file-path paste is ignored.
+
 ## Flags
 
 | flag        | default   | meaning                                   |
