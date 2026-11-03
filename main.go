@@ -386,9 +386,7 @@ func (m *model) addKeyPress(msg tea.KeyMsg) {
 	if label == "" {
 		return
 	}
-	m.keyPresses = append(m.keyPresses, keyPress{})
-	copy(m.keyPresses[1:], m.keyPresses)
-	m.keyPresses[0] = keyPress{label: label}
+	m.keyPresses = append(m.keyPresses, keyPress{label: label})
 }
 
 func (m *model) stepKeyPresses(dt float64) {

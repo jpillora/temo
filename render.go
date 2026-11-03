@@ -274,7 +274,7 @@ func (m *model) drawKeyline() {
 	hintX := max(0, m.w-len(hint))
 	text := []rune(strings.Join(labels, " "))
 	if len(text) > hintX {
-		text = text[:hintX]
+		text = text[len(text)-hintX:]
 	}
 	m.ovText(0, 0, string(text), 235)
 	m.ovText(hintX, 0, hint, 235)

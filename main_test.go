@@ -114,7 +114,7 @@ func TestKeyRow(t *testing.T) {
 	for _, key := range keys {
 		m.addKeyPress(key)
 	}
-	want := []string{"space", "alt+shift+k", "alt+shift+left", "ctrl+c", "a"}
+	want := []string{"a", "ctrl+c", "alt+shift+left", "alt+shift+k", "space"}
 	if len(m.keyPresses) != len(want) {
 		t.Fatalf("key row has %d entries, want %d", len(m.keyPresses), len(want))
 	}
@@ -126,12 +126,44 @@ func TestKeyRow(t *testing.T) {
 
 	m.keyPresses[0].age = 2
 	m.stepKeyPresses(1)
-	if len(m.keyPresses) != 4 || m.keyPresses[0].label != "alt+shift+k" {
+	if len(m.keyPresses) != 4 || m.keyPresses[0].label != "ctrl+c" {
 		t.Fatalf("individual key expiry left row %+v", m.keyPresses)
 	}
 	m.stepKeyPresses(keyPressDuration)
 	if len(m.keyPresses) != 0 {
 		t.Fatalf("expired key row was retained: %+v", m.keyPresses)
+	}
+}
+
+func TestKeylineMarquee(t *testing.T) {
+	m := testModel()
+	const hint = " keyline off - esc"
+	m.resize(12+len(hint), 12)
+	m.keylineOn = true
+	row := func() string {
+		m.ovClear()
+		m.drawKeyline()
+		runes := append([]rune(nil), m.ovRune[:m.w]...)
+		for i, r := range runes {
+			if r == 0 {
+				runes[i] = ' '
+			}
+		}
+		return string(runes)
+	}
+	m.addKeyPress(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m.addKeyPress(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	if got, want := row(), "a b         "+hint; got != want {
+		t.Fatalf("typing order: got %q, want %q", got, want)
+	}
+	m.addKeyPress(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m.addKeyPress(tea.KeyMsg{Type: tea.KeyRight})
+	if got, want := row(), "ctrl+c right"+hint; got != want {
+		t.Fatalf("overflow: got %q, want %q", got, want)
+	}
+	m.addKeyPress(tea.KeyMsg{Type: tea.KeyLeft})
+	if got, want := row(), "c right left"+hint; got != want {
+		t.Fatalf("left clipping: got %q, want %q", got, want)
 	}
 }
 
