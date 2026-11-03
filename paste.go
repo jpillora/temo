@@ -21,6 +21,7 @@ const maxPasteBytes = 32 << 20
 const maxPastePixels = 32 << 20
 
 type pastedImageMsg struct{ image image.Image }
+type clipboardRequestMsg string
 
 // Intercept OSC before Bubble Tea's key parser, which otherwise interprets the
 // payload as keystrokes. Embedding File preserves raw mode and cancellable input.
@@ -36,6 +37,7 @@ type imagePasteReader struct {
 	pending          []byte
 	escapeTimer      *time.Timer
 	escapeGeneration uint64
+	clipboard        clipboardPaste
 }
 
 func (r *imagePasteReader) stop() {
@@ -62,6 +64,12 @@ func (r *imagePasteReader) Read(p []byte) (int, error) {
 	n, err := r.File.Read(p[:readSize])
 	out, payloads := r.filter(p[:n])
 	for _, payload := range payloads {
+		if strings.HasPrefix(payload, "5522;") {
+			if msg := r.clipboard.receive(payload); msg != nil {
+				r.send(msg)
+			}
+			continue
+		}
 		if img := decodePasteImage(payload); img != nil {
 			r.send(pastedImageMsg{img})
 		}
@@ -100,6 +108,7 @@ func (r *imagePasteReader) filter(data []byte) ([]byte, []string) {
 			r.oscEscape = b == '\x1b'
 			if !r.discard {
 				if len(r.payload) >= maxPasteBytes {
+					r.clipboard = clipboardPaste{}
 					r.discard = true
 					r.payload = nil
 				} else {
@@ -178,6 +187,10 @@ func decodePasteImage(osc string) image.Image {
 			return nil
 		}
 	}
+	return decodeImageBytes(data)
+}
+
+func decodeImageBytes(data []byte) image.Image {
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > maxPastePixels/cfg.Height {
 		return nil

@@ -416,6 +416,11 @@ func (m *model) Init() tea.Cmd { return tick(m.fpsCap) }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case clipboardRequestMsg:
+		return m, func() tea.Msg {
+			fmt.Fprint(os.Stdout, string(msg))
+			return nil
+		}
 	case pastedImageMsg:
 		m.pastedImage = msg.image
 		m.pasteFrame = nil
@@ -691,7 +696,10 @@ func main() {
 	p := tea.NewProgram(m, tea.WithInput(input), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	input.send = p.Send
 	defer input.stop()
+	fmt.Fprint(os.Stdout, clipboardPasteEnable)
+	defer fmt.Fprint(os.Stdout, clipboardPasteDisable)
 	if _, err := p.Run(); err != nil {
+		fmt.Fprint(os.Stdout, clipboardPasteDisable)
 		fmt.Fprintln(os.Stderr, "temo:", err)
 		os.Exit(1)
 	}

@@ -102,8 +102,14 @@ shortcuts and quit keys. Escape turns keyline off; press it again to quit. The
 right edge shows ` keyline off - esc`. Up/Down adjust the frame rate by 1 FPS,
 within 1–60 FPS, when keyline is off.
 
-Paste an image using OSC 52 (base64 image bytes or an image data URL) or
-OSC 1337 `File=…:<base64>` input. TEMO displays PNG, JPEG, and GIF images as
+Paste an image in a terminal supporting **OSC 5522 clipboard paste events**.
+TEMO enables paste notifications, selects an available PNG, JPEG, or GIF MIME
+type, and requests the clipboard payload using the event's token and clipboard
+location. Chunked replies are assembled before displaying the image. Terminals
+without this extension continue using ordinary bracketed text paste.
+
+OSC 52 (base64 image bytes or an image data URL) and
+OSC 1337 `File=…:<base64>` input are also supported. TEMO displays images as
 truecolor half-block pixels for three seconds, then resumes the scene. Images
 are smoothly scaled to fit, with their aspect ratio and original colors
 preserved; transparency appears on black. This requires a terminal/client
