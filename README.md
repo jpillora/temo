@@ -31,15 +31,15 @@ go run . -primary '#00D8FF'
 6. **STARFIELD** — hyperspace with motion-blur streaks
 7. **INFERNO** — convection fire, stoked by wandering hot clumps
 
-Scenes auto-advance with a diagonal spring-driven wipe, a sine-wave greetings
-scroller rides the bottom, and everything pulses gently on the beat.
+Scenes auto-advance with a diagonal spring-driven wipe, and everything pulses
+gently on the beat. Enable keyline mode to display your keystrokes across the top.
 
 ## The color
 
 The only requirement, honored everywhere: pass any primary color and TEMO
 derives its entire 256-step palette from it — near-black shadows sweep through
 the deep and pure primary up to a tinted white, with a little hue drift so
-gradients feel rich. The status bar, scroller, help panel, and every scene
+gradients feel rich. The status bar, keyline, help panel, and every scene
 follow.
 
 ```sh
@@ -92,9 +92,15 @@ RISC-V 64, and s390x.
 | right click       | toggle ripple / lazers   |
 | `P`               | pause                    |
 | `C`               | CRT scanlines            |
-| `S`               | scroller                 |
+| `K`               | enable keyline           |
+| `↑` / `↓`         | increase / decrease FPS  |
 | `H` `?`           | help                     |
 | `Q` `ESC`         | quit                     |
+
+Keyline is a global mode: every key is displayed and captured, including demo
+shortcuts and quit keys. Escape turns keyline off; press it again to quit. The
+right edge shows ` keyline off - esc`. Up/Down adjust the frame rate by 1 FPS,
+within 1–60 FPS, when keyline is off.
 
 Paste an image using OSC 52 (base64 image bytes or an image data URL) or
 OSC 1337 `File=…:<base64>` input. TEMO displays PNG, JPEG, and GIF images as
@@ -108,11 +114,11 @@ that sends image data on paste; ordinary text or file-path paste is ignored.
 | flag        | default   | meaning                                   |
 | ----------- | --------- | ----------------------------------------- |
 | `-primary`  | `#FF5FD2` | primary color (hex or name); `-p` works   |
-| `-fps`      | `30`      | target frame rate (10–60)                 |
+| `-fps`      | `30`      | target frame rate (1–60)                 |
 | `-bpm`      | `128`     | beat-pulse tempo                          |
 | `-dwell`    | `12`      | seconds per scene, `0` to stay put        |
 | `-scene`    | `1`       | starting scene                            |
-| `-scroller` | `true`    | greetings scroller                        |
+| `-keyline`  | `false`   | capture and display keys; Escape turns off |
 | `-selftest` | `false`   | headless render + stats, for development  |
 | `-version`  | `false`   | print the build version and exit           |
 

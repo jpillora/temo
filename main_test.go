@@ -8,12 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func testModel() *model {
-	m := newModel(BuildPalette(RGB8{0xFF, 0x5F, 0xD2}), 30, 128, 12, 1, true)
+	m := newModel(BuildPalette(RGB8{0xFF, 0x5F, 0xD2}), 30, 128, 12, 1, false)
 	m.resize(120, 36)
 	m.t = 5 // past the fade-in
 	return m
@@ -131,6 +132,72 @@ func TestKeyRow(t *testing.T) {
 	m.stepKeyPresses(keyPressDuration)
 	if len(m.keyPresses) != 0 {
 		t.Fatalf("expired key row was retained: %+v", m.keyPresses)
+	}
+}
+
+func TestKeylineMode(t *testing.T) {
+	m := testModel()
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	if !m.keylineOn {
+		t.Fatal("K did not enable keyline")
+	}
+	m.View()
+	const hint = " keyline off - esc"
+	for i, ch := range hint {
+		if ch != ' ' && m.ovRune[m.w-len(hint)+i] != ch {
+			t.Fatal("keyline hint is not at the far right")
+		}
+	}
+	for _, key := range []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune{'q'}},
+		{Type: tea.KeyCtrlC},
+		{Type: tea.KeyRunes, Runes: []rune{'p'}},
+		{Type: tea.KeyRunes, Runes: []rune{'k'}},
+		{Type: tea.KeyRight},
+		{Type: tea.KeyUp},
+		{Type: tea.KeyDown},
+	} {
+		_, cmd := m.Update(key)
+		if cmd != nil || !m.keylineOn || m.paused || m.cur != 0 || m.fpsCap != 30 {
+			t.Fatalf("keyline failed to capture %s", key.String())
+		}
+	}
+	if len(m.keyPresses) != 7 {
+		t.Fatal("captured keys were not displayed")
+	}
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd != nil || m.keylineOn || len(m.keyPresses) != 0 {
+		t.Fatal("Escape did not turn keyline off")
+	}
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd == nil {
+		t.Fatal("Escape outside keyline did not quit")
+	}
+}
+
+func TestFPSShortcuts(t *testing.T) {
+	m := testModel()
+	m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if m.fpsCap != 31 {
+		t.Fatal("Up did not increase FPS")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if m.fpsCap != 30 {
+		t.Fatal("Down did not decrease FPS")
+	}
+	m.setFPS(1)
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if m.fpsCap != 1 {
+		t.Fatal("FPS fell below 1")
+	}
+	m.Update(tickMsg(time.Now()))
+	if m.t != 6 {
+		t.Fatalf("scene did not advance by one second at 1 FPS: %v", m.t)
+	}
+	m.setFPS(60)
+	m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if m.fpsCap != 60 {
+		t.Fatal("FPS exceeded 60")
 	}
 }
 

@@ -84,14 +84,14 @@ type model struct {
 	w, h   int // terminal cells; the bottom row is the status bar
 	pw, ph int // pixel grid: pw = w, ph = (h-1)*2
 
-	t          float64
-	last       time.Time
-	haveLast   bool
-	fpsEMA     float64
-	paused     bool
-	showHelp   bool
-	crt        bool
-	scrollerOn bool
+	t         float64
+	last      time.Time
+	haveLast  bool
+	fpsEMA    float64
+	paused    bool
+	showHelp  bool
+	crt       bool
+	keylineOn bool
 
 	scenes    []Scene
 	cur, prev int
@@ -136,25 +136,30 @@ type model struct {
 	styBadge, styBar, styDim lipgloss.Style
 }
 
-func newModel(pal *Palette, fpsCap int, bpm, dwell float64, start int, scroller bool) *model {
+func newModel(pal *Palette, fpsCap int, bpm, dwell float64, start int, keyline bool) *model {
 	m := &model{
-		pal:        pal,
-		fpsCap:     fpsCap,
-		bpm:        bpm,
-		dwell:      dwell,
-		crt:        true,
-		scrollerOn: scroller,
-		fpsEMA:     float64(fpsCap),
-		effectRNG:  0x1A2B3C4D,
+		pal:       pal,
+		fpsCap:    fpsCap,
+		bpm:       bpm,
+		dwell:     dwell,
+		crt:       true,
+		keylineOn: keyline,
+		fpsEMA:    float64(fpsCap),
+		effectRNG: 0x1A2B3C4D,
 	}
 	m.scenes = []Scene{&plasma{}, &tunnel{}, &metaballs{}, &knot{}, &rotozoom{}, &starfield{}, &fire{}}
 	if start >= 1 && start <= len(m.scenes) {
 		m.cur = start - 1
 	}
-	m.trSpring = harmonica.NewSpring(harmonica.FPS(fpsCap), 4.2, 1.0)
-	m.plSpring = harmonica.NewSpring(harmonica.FPS(fpsCap), 9.0, 0.55)
+	m.setFPS(fpsCap)
 	m.applyStyles()
 	return m
+}
+
+func (m *model) setFPS(fps int) {
+	m.fpsCap = max(1, min(60, fps))
+	m.trSpring = harmonica.NewSpring(harmonica.FPS(m.fpsCap), 4.2, 1.0)
+	m.plSpring = harmonica.NewSpring(harmonica.FPS(m.fpsCap), 9.0, 0.55)
 }
 
 func (m *model) applyStyles() {
@@ -420,7 +425,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resize(msg.Width, msg.Height)
 
 	case tea.KeyMsg:
-		m.addKeyPress(msg)
+		if m.keylineOn {
+			if !msg.Paste && msg.Type == tea.KeyEsc && !msg.Alt {
+				m.keylineOn = false
+				m.keyPresses = nil
+			} else {
+				m.addKeyPress(msg)
+			}
+			return m, nil
+		}
 		if msg.Paste {
 			return m, nil
 		}
@@ -431,13 +444,18 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.switchScene(m.cur + 1)
 		case "left":
 			m.switchScene(m.cur - 1)
+		case "up":
+			m.setFPS(m.fpsCap + 1)
+		case "down":
+			m.setFPS(m.fpsCap - 1)
 		case "p":
 			m.paused = !m.paused
 		case "c":
 			m.crt = !m.crt
 			m.updateRowF()
-		case "s":
-			m.scrollerOn = !m.scrollerOn
+		case "k", "K":
+			m.keylineOn = true
+			m.keyPresses = nil
 		case "h", "?":
 			m.showHelp = !m.showHelp
 		default:
@@ -524,9 +542,10 @@ func (m *model) View() string {
 	if m.pastedImage != nil {
 		m.ovClear()
 		m.renderPastedImage()
+		m.drawKeyline()
 		return m.renderCanvas() + m.statusBar()
 	}
-	if m.w < 40 || m.h < 10 {
+	if !m.keylineOn && (m.w < 40 || m.h < 10) {
 		return lipgloss.Place(m.w, m.h, lipgloss.Center, lipgloss.Center,
 			m.styBadge.Render(" TEMO ")+" needs a bigger terminal")
 	}
@@ -537,9 +556,8 @@ func (m *model) View() string {
 	m.ovClear()
 	m.drawToast()
 	m.drawModeToast()
-	m.drawScroller()
 	m.drawHelp()
-	m.drawKeyRow()
+	m.drawKeyline()
 	m.composeFrame()
 	return m.renderCanvas() + m.statusBar()
 }
@@ -553,10 +571,10 @@ func (m *model) statusBar() string {
 	if m.paused {
 		state += "  ·  PAUSED"
 	} else {
-		state += fmt.Sprintf("  ·  %3.0f FPS", m.fpsEMA)
+		state += fmt.Sprintf("  ·  %3.0f/%d FPS", m.fpsEMA, m.fpsCap)
 	}
 	info := m.styBar.Render("  " + state + "  ·  " + m.pal.Primary.Hex() + "  ")
-	keys := m.styDim.Render("LMB paint · RMB mode · SPACE next · H help · Q quit ")
+	keys := m.styDim.Render("LMB paint · RMB mode · SPACE next · K keyline · H help · Q quit ")
 	gap := m.w - lipgloss.Width(badge) - lipgloss.Width(info) - lipgloss.Width(keys)
 	if gap < 0 {
 		keys = ""
@@ -626,17 +644,17 @@ func main() {
 		bpm         float64
 		dwell       float64
 		start       int
-		scroller    bool
+		keyline     bool
 		selftest    bool
 		showVersion bool
 	)
 	flag.StringVar(&primary, "primary", "#FF5FD2", "primary color: hex like '#FF5FD2' or a name ("+colorNames()+")")
 	flag.StringVar(&primary, "p", "#FF5FD2", "shorthand for -primary")
-	flag.IntVar(&fpsCap, "fps", 30, "target frames per second (10-60)")
+	flag.IntVar(&fpsCap, "fps", 30, "target frames per second (1-60)")
 	flag.Float64Var(&bpm, "bpm", 128, "beat pulse tempo")
 	flag.Float64Var(&dwell, "dwell", 12, "seconds per scene before auto-advance (0 = stay)")
 	flag.IntVar(&start, "scene", 1, "scene to start on (1-7)")
-	flag.BoolVar(&scroller, "scroller", true, "show the greetings scroller")
+	flag.BoolVar(&keyline, "keyline", false, "capture and display keys (Escape turns off)")
 	flag.BoolVar(&selftest, "selftest", false, "render each scene headless, print stats and one frame")
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")
 	flag.Parse()
@@ -648,8 +666,8 @@ func main() {
 	if flag.NArg() > 0 {
 		primary = flag.Arg(0)
 	}
-	if fpsCap < 10 {
-		fpsCap = 10
+	if fpsCap < 1 {
+		fpsCap = 1
 	}
 	if fpsCap > 60 {
 		fpsCap = 60
@@ -662,7 +680,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	m := newModel(BuildPalette(prim), fpsCap, bpm, dwell, start, scroller)
+	m := newModel(BuildPalette(prim), fpsCap, bpm, dwell, start, keyline)
 
 	if selftest {
 		runSelftest(m)

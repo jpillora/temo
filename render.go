@@ -9,7 +9,7 @@ import (
 
 // Each terminal cell is drawn as "▀" so it carries two pixels: the foreground
 // colors the top half, the background the bottom. An overlay layer of runes
-// (scroller, toasts, help) is stamped on top of the pixel field per cell.
+// (keyline, toasts, help) is stamped on top of the pixel field per cell.
 
 var itoa [256]string
 
@@ -259,47 +259,25 @@ func (m *model) ovDimRect(x0, y0, x1, y1 int) {
 	}
 }
 
-// ── scroller ─────────────────────────────────────────────────────────────
-
-// drawKeyRow puts the newest press at the left edge, shifting the remaining
-// live entries to the right. With no live keys it leaves the top row untouched.
-func (m *model) drawKeyRow() {
-	if len(m.keyPresses) == 0 {
+// drawKeyline captures the top row globally, including during image previews.
+func (m *model) drawKeyline() {
+	if !m.keylineOn || m.w == 0 || m.h < 2 {
 		return
 	}
+	const hint = " keyline off - esc"
+	clear(m.ovRune[:m.w])
 	labels := make([]string, len(m.keyPresses))
 	for i, key := range m.keyPresses {
 		labels[i] = key.label
 	}
 	m.ovDimRect(0, 0, m.w-1, 0)
-	m.ovText(0, 0, strings.Join(labels, " "), 235)
-}
-
-var scrollText = []rune("✦ T E M O ✦ A TERMINAL DEMOSCENE IN PURE GO ✦ BUBBLE TEA × LIP GLOSS × HARMONICA ✦ GREETINGS TO ALL TERMINAL DWELLERS ✦ YOUR COLOR · YOUR DEMO :: temo -primary '#00D8FF' ✦ PRESS SPACE FOR THE NEXT EFFECT ✦ STAY AWHILE AND RENDER ✦ ")
-
-func (m *model) drawScroller() {
-	if !m.scrollerOn || m.w < 24 {
-		return
+	hintX := max(0, m.w-len(hint))
+	text := []rune(strings.Join(labels, " "))
+	if len(text) > hintX {
+		text = text[:hintX]
 	}
-	rows := m.h - 1
-	basePos := float64(rows) - 2.6
-	amp := 1.15 + 0.85*math.Max(0, m.pulsePos)
-	off := int(m.t * 14)
-	n := len(scrollText)
-	for x := 0; x < m.w; x++ {
-		r := scrollText[(off+x)%n]
-		if r == ' ' {
-			continue
-		}
-		y := int(basePos + math.Sin(float64(x)*0.22+m.t*2.8)*amp)
-		if y < 0 || y >= rows {
-			continue
-		}
-		col := uint8(190 + int(60*math.Sin(float64(x)*0.13-m.t*3.1)))
-		oi := y*m.w + x
-		m.ovRune[oi] = r
-		m.ovCol[oi] = col
-	}
+	m.ovText(0, 0, string(text), 235)
+	m.ovText(hintX, 0, hint, 235)
 }
 
 // ── scene-name toast ─────────────────────────────────────────────────────
@@ -365,7 +343,8 @@ func (m *model) drawHelp() {
 		{"RIGHT CLICK", "toggle fx"},
 		{"P", "pause"},
 		{"C", "crt scanlines"},
-		{"S", "scroller"},
+		{"K", "keyline"},
+		{"↑ / ↓", "adjust fps"},
 		{"H / ?", "toggle help"},
 		{"Q / ESC", "quit"},
 	}

@@ -94,6 +94,7 @@ func TestImagePreview(t *testing.T) {
 	if m.t <= before {
 		t.Fatal("demo did not resume")
 	}
+	m.keylineOn = true
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}, Paste: true})
 	if m.keyPresses[0].label != "paste" {
 		t.Fatal("text paste was interpreted as a control")
